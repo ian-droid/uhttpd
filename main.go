@@ -10,11 +10,15 @@ import (
 )
 
 var (
-	ListenAddr   = flag.String("addr", ":80", "The ADDRESS:PORT to listen on")
-	DocumentRoot = flag.String("dir", "", "The directory to serve up")
-	Logging      = flag.Bool("log", false, "Enable/disable logging")
-	LogPrefix    = flag.String("log-prefix", "uhttpd", "Set the logging prefix")
-	LogPath      = flag.String("log-path", "", "Log to file (leave blank for STDOUT)")
+	ListenAddr    = flag.String("addr", ":80", "The ADDRESS:PORT to listen on")
+	DocumentRoot  = flag.String("dir", "", "The directory to serve up")
+	Logging       = flag.Bool("log", false, "Enable/disable logging")
+	LogPrefix     = flag.String("log-prefix", "uhttpd", "Set the logging prefix")
+	LogPath       = flag.String("log-path", "", "Log to file (leave blank for STDOUT)")
+	EnableTLS     = flag.Bool("tls", false, "Enable/disable TLS server")
+	TLSListenAddr = flag.String("tls-addr", ":443", "The ADDRESS:PORT for TLS to listen on")
+	SvrCertFile   = flag.String("cert", "", "Server certificate file")
+	SvrKeyFile    = flag.String("key", "", "Key file for server certificate)")
 )
 
 func main() {
@@ -22,6 +26,10 @@ func main() {
 	log.SetPrefix(*LogPrefix + " ")
 	if *DocumentRoot == "" {
 		log.Fatalln("You must specify a directory to serve, with '-dir=\"...\"'")
+	}
+
+	if *EnableTLS && (*SvrCertFile == "" || *SvrKeyFile == "") {
+		log.Fatalln("You must specify both certificate and key flie for TLS enabled server.")
 	}
 
 	handler := http.FileServer(http.Dir(*DocumentRoot))
@@ -40,10 +48,25 @@ func main() {
 		}
 		handler = LoggingHandler(output, http.FileServer(http.Dir(*DocumentRoot)))
 		log.Printf("Serving %q", *DocumentRoot)
-		log.Printf("Listening on %q", *ListenAddr)
+		log.Printf("Listening on %q for HTTP requests", *ListenAddr)
+		if *EnableTLS {
+			log.Printf("Listening on %q for HTTPS requests", *TLSListenAddr)
+		}
 	}
-	if err := http.ListenAndServe(*ListenAddr, handler); err != nil {
-		log.Fatalln(err)
+
+	if *EnableTLS {
+		go func() {
+			if err := http.ListenAndServe(*ListenAddr, handler); err != nil {
+				log.Fatalln(err)
+			}
+		}()
+		if err := http.ListenAndServeTLS(*TLSListenAddr, *SvrCertFile, *SvrKeyFile, handler); err != nil {
+			log.Fatalln(err)
+		}
+	} else {
+		if err := http.ListenAndServe(*ListenAddr, handler); err != nil {
+			log.Fatalln(err)
+		}
 	}
 
 	return
